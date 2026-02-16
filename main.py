@@ -9,15 +9,15 @@ from telegram.ext import (
     filters,
 )
 
-TOKEN = "8523917985:AAEVMcwAGwF3y-rlaF2t2ZikgpH0vib3PYw"
+TOKEN = "7741239279:AAGRIDHiP_2Vt66_zRv7ZJRXMTKbJamJ3v0"
 ADMIN_ID = 8332077004
-CHANNEL_ID = -100123456789
 
 # ===== DATABASE =====
 db = sqlite3.connect("kino.db", check_same_thread=False)
-cursor = db.cursor()
+cur = db.cursor()
 
-cursor.execute("""
+cur.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY)")
+cur.execute("""
 CREATE TABLE IF NOT EXISTS movies(
 code TEXT PRIMARY KEY,
 title TEXT,
@@ -26,114 +26,149 @@ file_id TEXT
 """)
 db.commit()
 
+def add_user(uid):
+    cur.execute("INSERT OR IGNORE INTO users VALUES(?)", (uid,))
+    db.commit()
+
 # ===== STATES =====
-MENU, ADD_CODE, ADD_TITLE, ADD_VIDEO, DELETE = range(5)
+MENU, ADD_CODE, ADD_TITLE, ADD_VIDEO, SEARCH, BROADCAST = range(6)
 
 # ===== KEYBOARD =====
-menu = ReplyKeyboardMarkup(
-    [["🎬 Kino olish"], ["❌ Bekor qilish"]],
+menu_markup = ReplyKeyboardMarkup(
+    [["🎬 Kod bilan olish", "🔍 Qidirish"],
+     ["📃 Ro‘yxat", "❌ Bekor"]],
     resize_keyboard=True
 )
 
-cancel = ReplyKeyboardMarkup([["❌ Bekor qilish"]], resize_keyboard=True)
+cancel_markup = ReplyKeyboardMarkup([["❌ Bekor"]], resize_keyboard=True)
 
 # ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    add_user(update.effective_user.id)
+
     await update.message.reply_text(
-        "🎬 Kino botga xush kelibsiz!\nKino kodini yuboring:",
-        reply_markup=menu
+        "🎬 Kino botga xush kelibsiz!",
+        reply_markup=menu_markup
     )
     return MENU
 
-# ===== USER SEARCH =====
-async def user_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ===== USER MENU =====
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
-    if text == "❌ Bekor qilish":
-        return await cancel_flow(update, context)
+    if text == "🎬 Kod bilan olish":
+        await update.message.reply_text("Kod yuboring:")
+        return MENU
 
-    movie = cursor.execute(
+    if text == "🔍 Qidirish":
+        await update.message.reply_text("Kino nomini yozing:", reply_markup=cancel_markup)
+        return SEARCH
+
+    if text == "📃 Ro‘yxat":
+        movies = cur.execute("SELECT code,title FROM movies").fetchall()
+
+        if not movies:
+            await update.message.reply_text("Bazadagi kino yo‘q.")
+        else:
+            msg = "\n".join([f"{c} — {t}" for c, t in movies])
+            await update.message.reply_text(f"🎬 Kinolar:\n\n{msg}")
+
+        return MENU
+
+    if text == "❌ Bekor":
+        return await cancel(update, context)
+
+    # kod orqali qidirish
+    movie = cur.execute(
         "SELECT title,file_id FROM movies WHERE code=?",
         (text,)
     ).fetchone()
 
     if movie:
-        title, file_id = movie
-        await update.message.reply_video(file_id, caption=f"🎬 {title}")
+        await update.message.reply_video(movie[1], caption=f"🎬 {movie[0]}")
     else:
         await update.message.reply_text("❌ Kino topilmadi")
 
     return MENU
 
-# ===== ADMIN ADD MOVIE =====
+# ===== SEARCH =====
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text
+
+    movies = cur.execute(
+        "SELECT code,title FROM movies WHERE title LIKE ?",
+        (f"%{name}%",)
+    ).fetchall()
+
+    if movies:
+        msg = "\n".join([f"{c} — {t}" for c, t in movies])
+        await update.message.reply_text(f"🔍 Natija:\n\n{msg}")
+    else:
+        await update.message.reply_text("Topilmadi.")
+
+    return MENU
+
+# ===== ADMIN ADD =====
 async def add_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    await update.message.reply_text("🎬 Kino kodini yozing:", reply_markup=cancel)
+    await update.message.reply_text("Kod yozing:", reply_markup=cancel_markup)
     return ADD_CODE
 
 async def add_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["code"] = update.message.text
-    await update.message.reply_text("🎬 Kino nomi:")
+    await update.message.reply_text("Kino nomi:")
     return ADD_TITLE
 
 async def add_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["title"] = update.message.text
-    await update.message.reply_text("📤 Kino video yuboring:")
+    await update.message.reply_text("Video yuboring:")
     return ADD_VIDEO
 
 async def add_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video.file_id
-    code = context.user_data["code"]
-    title = context.user_data["title"]
 
-    cursor.execute(
-        "INSERT OR REPLACE INTO movies VALUES (?,?,?)",
-        (code, title, video)
+    cur.execute(
+        "INSERT OR REPLACE INTO movies VALUES(?,?,?)",
+        (context.user_data["code"],
+         context.user_data["title"],
+         video)
     )
     db.commit()
 
-    caption = f"🎬 {title}\n📌 Kod: {code}"
-
-    # Kanalga post
-    await context.bot.send_video(CHANNEL_ID, video, caption=caption)
-
-    await update.message.reply_text("✅ Kino saqlandi va kanalga joylandi!", reply_markup=menu)
+    await update.message.reply_text("✅ Kino saqlandi!", reply_markup=menu_markup)
 
     context.user_data.clear()
     return MENU
 
-# ===== DELETE MOVIE =====
-async def delete_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ===== BROADCAST =====
+async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    await update.message.reply_text("🗑 O‘chirish uchun kod yuboring:", reply_markup=cancel)
-    return DELETE
+    await update.message.reply_text("Xabar yuboring:")
+    return BROADCAST
 
-async def delete_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    code = update.message.text
+async def broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    users = cur.execute("SELECT id FROM users").fetchall()
 
-    cursor.execute("DELETE FROM movies WHERE code=?", (code,))
-    db.commit()
+    sent = 0
+    for u in users:
+        try:
+            await context.bot.send_message(u[0], text)
+            sent += 1
+        except:
+            pass
 
-    await update.message.reply_text("✅ Kino o‘chirildi!", reply_markup=menu)
+    await update.message.reply_text(f"✅ Yuborildi: {sent}")
     return MENU
-
-# ===== STATS =====
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    total = cursor.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
-
-    await update.message.reply_text(f"📊 Bazadagi kinolar: {total}")
 
 # ===== CANCEL =====
-async def cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("❌ Bekor qilindi", reply_markup=menu)
+    await update.message.reply_text("Bekor qilindi.", reply_markup=menu_markup)
     return MENU
 
 # ===== MAIN =====
@@ -143,9 +178,10 @@ def main():
     user_conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, user_menu)],
+            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu)],
+            SEARCH: [MessageHandler(filters.TEXT, search)],
         },
-        fallbacks=[MessageHandler(filters.TEXT, cancel_flow)],
+        fallbacks=[MessageHandler(filters.TEXT, cancel)],
     )
 
     add_conv = ConversationHandler(
@@ -155,21 +191,20 @@ def main():
             ADD_TITLE: [MessageHandler(filters.TEXT, add_title)],
             ADD_VIDEO: [MessageHandler(filters.VIDEO, add_video)],
         },
-        fallbacks=[MessageHandler(filters.TEXT, cancel_flow)],
+        fallbacks=[MessageHandler(filters.TEXT, cancel)],
     )
 
-    delete_conv = ConversationHandler(
-        entry_points=[CommandHandler("deletemovie", delete_movie)],
-        states={DELETE: [MessageHandler(filters.TEXT, delete_code)]},
-        fallbacks=[MessageHandler(filters.TEXT, cancel_flow)],
+    bc_conv = ConversationHandler(
+        entry_points=[CommandHandler("broadcast", broadcast_cmd)],
+        states={BROADCAST: [MessageHandler(filters.TEXT, broadcast_send)]},
+        fallbacks=[],
     )
 
     app.add_handler(user_conv)
     app.add_handler(add_conv)
-    app.add_handler(delete_conv)
-    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(bc_conv)
 
-    print("🎬 PRO kino bot ishlayapti...")
+    print("🎬 ULTRA KINO BOT ISHLAYAPTI...")
     app.run_polling()
 
 if __name__ == "__main__":
