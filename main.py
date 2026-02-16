@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -15,14 +16,20 @@ from handlers.common import common_router
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Logs papkasini yaratish (agar yo'q bo'lsa)
+logs_dir = Path("logs")
+logs_dir.mkdir(exist_ok=True)
 
 # Log sozlamalari
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/bot.log"),
+        logging.FileHandler("logs/bot.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
@@ -32,29 +39,41 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# Routerlarni qo'shish
+# Routerlarni qo'shish (bot ni routerlarga o'tkazamiz)
 dp.include_router(admin_router)
 dp.include_router(user_router)
 dp.include_router(common_router)
 
-# Global bot referensini qo'shish
-import handlers.admin
-import handlers.user
-handlers.admin.bot = bot
-handlers.user.bot = bot
-
 async def on_startup():
     """Ishga tushish"""
     logger.info("🚀 Bot ishga tushmoqda...")
-    await db.connect()
-    logger.info("✅ Bot muvaffaqiyatli ishga tushdi!")
+    logger.info(f"📝 Admin ID: {ADMIN_ID}")
+    logger.info(f"📢 Channel: {CHANNEL_ID}")
+    
+    try:
+        await db.connect()
+        logger.info("✅ Ma'lumotlar bazasiga ulandi")
+    except Exception as e:
+        logger.error(f"❌ Bazaga ulanishda xatolik: {e}")
+        raise
+    
+    bot_info = await bot.get_me()
+    logger.info(f"✅ Bot muvaffaqiyatli ishga tushdi: @{bot_info.username}")
 
 async def on_shutdown():
     """To'xtash"""
     logger.info("🛑 Bot to'xtatilmoqda...")
-    await db.close()
-    await bot.session.close()
-    logger.info("✅ Bot to'xtatildi!")
+    try:
+        await db.close()
+        logger.info("✅ Baza yopildi")
+    except Exception as e:
+        logger.error(f"❌ Bazani yopishda xatolik: {e}")
+    
+    try:
+        await bot.session.close()
+        logger.info("✅ Bot session yopildi")
+    except Exception as e:
+        logger.error(f"❌ Session yopishda xatolik: {e}")
 
 async def main():
     """Asosiy funksiya"""
@@ -62,11 +81,13 @@ async def main():
     dp.shutdown.register(on_shutdown)
     
     try:
+        logger.info("📡 Polling boshlandi...")
         await dp.start_polling(bot)
     except KeyboardInterrupt:
         logger.info("⌨️ Keyboard interrupt")
     except Exception as e:
-        logger.error(f"❌ Xatolik: {e}")
+        logger.error(f"❌ Critical error: {e}")
+        raise
     finally:
         await on_shutdown()
 
