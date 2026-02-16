@@ -1,7 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "TOKENINGIZNI_BU_YERGA_QOYING"
+TOKEN = "8356052924:AAHeMs7mOMDFR1IB2zrO9XFfRmSY9WWlcpg"
 
 # Tugmalar
 keyboard = [
