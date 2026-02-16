@@ -1,90 +1,94 @@
-import sqlite3
 import aiosqlite
-from typing import Optional, Dict, List, Any
+import asyncio
+from datetime import datetime
+from typing import Optional, List, Dict, Any
 import logging
 
-# Logger sozlash
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, db_file: str = "bot_database.db"):
-        self.db_file = db_file
+    def __init__(self, db_path: str = "kino_bot.db"):
+        self.db_path = db_path
         self.connection: Optional[aiosqlite.Connection] = None
-
+    
     async def connect(self):
-        """Ma'lumotlar bazasiga ulanish"""
-        self.connection = await aiosqlite.connect(self.db_file)
-        self.connection.row_factory = aiosqlite.Row  # Natijani dict ko'rinishida olish uchun
+        """Bazaga ulanish"""
+        self.connection = await aiosqlite.connect(self.db_path)
+        self.connection.row_factory = aiosqlite.Row
         await self.create_tables()
-
-    async def create_tables(self):
-        """Jadvallarni yaratish (agar yo'q bo'lsa)"""
-        async with self.connection.cursor() as cursor:
-            # Foydalanuvchilar jadvali
-            await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Kinolar jadvali
-            await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS movies (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    code TEXT UNIQUE NOT NULL,
-                    caption TEXT,
-                    file_id TEXT,
-                    file_type TEXT,
-                    views INTEGER DEFAULT 0,
-                    is_active INTEGER DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Ko'rishlar tarixi
-            await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS movie_views (                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    movie_id INTEGER,
-                    viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY(user_id) REFERENCES users(user_id),
-                    FOREIGN KEY(movie_id) REFERENCES movies(id)
-                )
-            """)
-            
-            # Sozlamalar
-            await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS bot_settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            await self.connection.commit()
-
+        logger.info("✅ Ma'lumotlar bazasiga ulanish muvaffaqiyatli amalga oshirildi")
+    
     async def close(self):
-        """Ulanishni yopish"""
+        """Bazadan uzilish"""
         if self.connection:
             await self.connection.close()
-
-    # ================= FOYDALANUVCHI OPERATSIYALARI =================
+            logger.info("🔌 Ma'lumotlar bazasidan uzilish amalga oshirildi")
     
-    async def add_user(self, user_id: int, username: str, first_name: str) -> bool:
+    async def create_tables(self):
+        """Jadvallarni yaratish"""
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                is_banned INTEGER DEFAULT 0,
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS movies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                file_id TEXT NOT NULL,
+                file_type TEXT DEFAULT 'video',
+                caption TEXT,
+                views INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS movie_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                movie_id INTEGER NOT NULL,
+                viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (movie_id) REFERENCES movies(id)
+            )
+        """)
+        
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        await self.connection.commit()
+        logger.info("📊 Barcha jadvallar yaratildi")
+    
+    # ================= USER OPERATSIYALARI =================
+    
+    async def add_user(self, user_id: int, username: str, first_name: str, last_name: str = None):
         """Yangi foydalanuvchini qo'shish"""
         try:
-            await self.connection.execute(
-                "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-                (user_id, username, first_name)
-            )
+            await self.connection.execute("""
+                INSERT OR IGNORE INTO users (user_id, username, first_name, last_name)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, username, first_name, last_name))
+            await self.connection.execute("""
+                UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE user_id = ?
+            """, (user_id,))
             await self.connection.commit()
             return True
         except Exception as e:
-            logger.error(f"Foydalanuvchi qo'shishda xatolik: {e}")
+            logger.error(f"Foydalanuvchini qo'shishda xatolik: {e}")
             return False
     
     async def get_user(self, user_id: int) -> Optional[Dict]:
@@ -92,38 +96,56 @@ class Database:
         cursor = await self.connection.execute(
             "SELECT * FROM users WHERE user_id = ?", (user_id,)
         )
-        row = await cursor.fetchone()
-        return dict(row) if row else None
-
+        row = await cursor.fetchone()        return dict(row) if row else None
+    
+    async def ban_user(self, user_id: int):
+        """Foydalanuvchini ban qilish"""
+        await self.connection.execute(
+            "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)
+        )
+        await self.connection.commit()
+    
+    async def unban_user(self, user_id: int):
+        """Foydalanuvchini ban dan chiqarish"""
+        await self.connection.execute(
+            "UPDATE users SET is_banned = 0 WHERE user_id = ?", (user_id,)
+        )
+        await self.connection.commit()
+    
+    async def get_all_users(self) -> List[Dict]:
+        """Barcha foydalanuvchilarni olish"""
+        cursor = await self.connection.execute("SELECT * FROM users")
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+    
     async def get_users_count(self) -> int:
-        """Foydalanuvchilar sonini olish"""        cursor = await self.connection.execute("SELECT COUNT(*) FROM users")
+        """Foydalanuvchilar sonini olish"""
+        cursor = await self.connection.execute("SELECT COUNT(*) FROM users")
         result = await cursor.fetchone()
         return result[0] if result else 0
-
-    # ================= KINO OPERATSIYALARI =================
     
-    async def add_movie(self, code: str, caption: str, file_id: str, file_type: str) -> bool:
-        """Kinoni bazaga qo'shish"""
+    # ================= MOVIE OPERATSIYALARI =================
+    
+    async def add_movie(self, code: str, file_id: str, file_type: str, caption: str) -> bool:
+        """Kino qo'shish"""
         try:
-            await self.connection.execute(
-                """INSERT INTO movies (code, caption, file_id, file_type) 
-                   VALUES (?, ?, ?, ?)""",
-                (code.upper(), caption, file_id, file_type)
-            )
+            await self.connection.execute("""
+                INSERT INTO movies (code, file_id, file_type, caption)
+                VALUES (?, ?, ?, ?)
+            """, (code.upper(), file_id, file_type, caption))
             await self.connection.commit()
             return True
+        except aiosqlite.IntegrityError:
+            return False
         except Exception as e:
             logger.error(f"Kino qo'shishda xatolik: {e}")
             return False
     
     async def get_movie(self, code: str) -> Optional[Dict]:
         """Kod bo'yicha kinoni olish"""
-        # BU YERDA XATO BOR EDI, TO'G'RILANDI:
         cursor = await self.connection.execute(
-            "SELECT * FROM movies WHERE code = ? AND is_active = 1", 
-            (code.upper(),)
-        )
-        row = await cursor.fetchone()
+            "SELECT * FROM movies WHERE code = ? AND is_active = 1", (code.upper(),)
+        )        row = await cursor.fetchone()
         return dict(row) if row else None
     
     async def get_all_movies(self) -> List[Dict]:
@@ -133,10 +155,9 @@ class Database:
         return [dict(row) for row in rows]
     
     async def delete_movie(self, code: str) -> bool:
-        """Kinoni o'chirish (faqat is_active ni 0 qilamiz)"""
+        """Kinoni o'chirish"""
         cursor = await self.connection.execute(
-            "UPDATE movies SET is_active = 0 WHERE code = ?", 
-            (code.upper(),)
+            "DELETE FROM movies WHERE code = ?", (code.upper(),)
         )
         await self.connection.commit()
         return cursor.rowcount > 0
@@ -145,7 +166,8 @@ class Database:
         """Ko'rishlar sonini yangilash"""
         await self.connection.execute("""
             UPDATE movies SET views = views + 1 WHERE id = ?
-        """, (movie_id,))        await self.connection.commit()
+        """, (movie_id,))
+        await self.connection.commit()
     
     async def add_movie_view(self, user_id: int, movie_id: int):
         """Ko'rish tarixini qo'shish"""
@@ -171,10 +193,8 @@ class Database:
     
     async def search_movies(self, query: str) -> List[Dict]:
         """Kinolarni qidirish"""
-        # SQL so'rovi to'g'rilandi
         cursor = await self.connection.execute("""
-            SELECT * FROM movies 
-            WHERE (caption LIKE ? OR code LIKE ?) AND is_active = 1
+            SELECT * FROM movies             WHERE (caption LIKE ? OR code LIKE ?) AND is_active = 1
             ORDER BY created_at DESC
         """, (f'%{query}%', f'%{query}%'))
         rows = await cursor.fetchall()
@@ -194,7 +214,8 @@ class Database:
         """Sozlamani o'rnatish"""
         await self.connection.execute("""
             INSERT OR REPLACE INTO bot_settings (key, value, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)        """, (key, value))
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (key, value))
         await self.connection.commit()
     
     # ================= STATISTIKA =================
