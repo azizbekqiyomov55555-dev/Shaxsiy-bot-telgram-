@@ -13,225 +13,163 @@ TOKEN = "8356052924:AAHeMs7mOMDFR1IB2zrO9XFfRmSY9WWlcpg"
 ADMIN_ID = 8332077004
 CHANNEL_ID = -100123456789
 
-# ========= DATABASE =========
-db = sqlite3.connect("market.db", check_same_thread=False)
+# ===== DATABASE =====
+db = sqlite3.connect("kino.db", check_same_thread=False)
 cursor = db.cursor()
 
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    name TEXT
+CREATE TABLE IF NOT EXISTS movies(
+code TEXT PRIMARY KEY,
+title TEXT,
+file_id TEXT
 )
 """)
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS ads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    name TEXT,
-    price TEXT,
-    description TEXT
-)
-""")
-
 db.commit()
 
-def add_user(user):
-    cursor.execute("INSERT OR IGNORE INTO users VALUES (?,?)",
-                   (user.id, user.first_name))
-    db.commit()
+# ===== STATES =====
+MENU, ADD_CODE, ADD_TITLE, ADD_VIDEO, DELETE = range(5)
 
-def add_ad(uid, name, price, desc):
-    cursor.execute("INSERT INTO ads (user_id,name,price,description) VALUES (?,?,?,?)",
-                   (uid, name, price, desc))
-    db.commit()
+# ===== KEYBOARD =====
+menu = ReplyKeyboardMarkup(
+    [["🎬 Kino olish"], ["❌ Bekor qilish"]],
+    resize_keyboard=True
+)
 
-def stats():
-    users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    ads = cursor.execute("SELECT COUNT(*) FROM ads").fetchone()[0]
-    return users, ads
+cancel = ReplyKeyboardMarkup([["❌ Bekor qilish"]], resize_keyboard=True)
 
-# ========= STATES =========
-(
-    MENU,
-    SOTISH_NAME,
-    SOTISH_PRICE,
-    SOTISH_DESC,
-    SOTISH_PHOTO,
-    OLISH,
-    BROADCAST
-) = range(7)
-
-# ========= KEYBOARDS =========
-menu_keyboard = [
-    ["🟢 Sotish", "🛒 Olish"],
-    ["📊 Statistika", "❌ Bekor qilish"]
-]
-
-menu_markup = ReplyKeyboardMarkup(menu_keyboard, resize_keyboard=True)
-cancel_markup = ReplyKeyboardMarkup([["❌ Bekor qilish"]], resize_keyboard=True)
-
-# ========= START =========
+# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    add_user(user)
-
     await update.message.reply_text(
-        f"👋 Salom {user.first_name}!\nMarketplace botga xush kelibsiz!",
-        reply_markup=menu_markup
+        "🎬 Kino botga xush kelibsiz!\nKino kodini yuboring:",
+        reply_markup=menu
     )
     return MENU
 
-# ========= MENU =========
-async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ===== USER SEARCH =====
+async def user_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-
-    if text == "🟢 Sotish":
-        await update.message.reply_text("📦 Mahsulot nomi:", reply_markup=cancel_markup)
-        return SOTISH_NAME
-
-    if text == "🛒 Olish":
-        await update.message.reply_text("🛍 Buyurtma yozing:", reply_markup=cancel_markup)
-        return OLISH
-
-    if text == "📊 Statistika":
-        u, a = stats()
-        await update.message.reply_text(
-            f"📊 Statistika\n👥 Users: {u}\n📢 Ads: {a}",
-            reply_markup=menu_markup
-        )
-        return MENU
 
     if text == "❌ Bekor qilish":
-        return await cancel(update, context)
+        return await cancel_flow(update, context)
+
+    movie = cursor.execute(
+        "SELECT title,file_id FROM movies WHERE code=?",
+        (text,)
+    ).fetchone()
+
+    if movie:
+        title, file_id = movie
+        await update.message.reply_video(file_id, caption=f"🎬 {title}")
+    else:
+        await update.message.reply_text("❌ Kino topilmadi")
 
     return MENU
 
-# ========= SOTISH FLOW =========
-async def sotish_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["name"] = update.message.text
-    await update.message.reply_text("💰 Narx:")
-    return SOTISH_PRICE
+# ===== ADMIN ADD MOVIE =====
+async def add_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
 
-async def sotish_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["price"] = update.message.text
-    await update.message.reply_text("📝 Izoh:")
-    return SOTISH_DESC
+    await update.message.reply_text("🎬 Kino kodini yozing:", reply_markup=cancel)
+    return ADD_CODE
 
-async def sotish_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["desc"] = update.message.text
-    await update.message.reply_text("🖼 Rasm yuboring:")
-    return SOTISH_PHOTO
+async def add_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["code"] = update.message.text
+    await update.message.reply_text("🎬 Kino nomi:")
+    return ADD_TITLE
 
-async def sotish_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    photo = update.message.photo[-1].file_id
+async def add_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["title"] = update.message.text
+    await update.message.reply_text("📤 Kino video yuboring:")
+    return ADD_VIDEO
 
-    name = context.user_data["name"]
-    price = context.user_data["price"]
-    desc = context.user_data["desc"]
+async def add_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    video = update.message.video.file_id
+    code = context.user_data["code"]
+    title = context.user_data["title"]
 
-    add_ad(user.id, name, price, desc)
-
-    caption = (
-        f"📢 YANGI E'LON\n\n"
-        f"👤 {user.first_name}\n🆔 {user.id}\n\n"
-        f"📦 {name}\n💰 {price}\n📝 {desc}"
+    cursor.execute(
+        "INSERT OR REPLACE INTO movies VALUES (?,?,?)",
+        (code, title, video)
     )
+    db.commit()
 
-    await context.bot.send_photo(ADMIN_ID, photo, caption=caption)
-    await context.bot.send_photo(CHANNEL_ID, photo, caption=caption)
+    caption = f"🎬 {title}\n📌 Kod: {code}"
 
-    await update.message.reply_text("✅ E’lon joylandi!", reply_markup=menu_markup)
+    # Kanalga post
+    await context.bot.send_video(CHANNEL_ID, video, caption=caption)
+
+    await update.message.reply_text("✅ Kino saqlandi va kanalga joylandi!", reply_markup=menu)
 
     context.user_data.clear()
     return MENU
 
-# ========= OLISH =========
-async def olish(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+# ===== DELETE MOVIE =====
+async def delete_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
 
-    msg = (
-        f"🛒 BUYURTMA\n\n"
-        f"👤 {user.first_name}\n🆔 {user.id}\n\n"
-        f"{update.message.text}"
-    )
+    await update.message.reply_text("🗑 O‘chirish uchun kod yuboring:", reply_markup=cancel)
+    return DELETE
 
-    await context.bot.send_message(ADMIN_ID, msg)
-    await update.message.reply_text("✅ Buyurtma yuborildi!", reply_markup=menu_markup)
+async def delete_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = update.message.text
 
+    cursor.execute("DELETE FROM movies WHERE code=?", (code,))
+    db.commit()
+
+    await update.message.reply_text("✅ Kino o‘chirildi!", reply_markup=menu)
     return MENU
 
-# ========= CANCEL =========
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ===== STATS =====
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    total = cursor.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
+
+    await update.message.reply_text(f"📊 Bazadagi kinolar: {total}")
+
+# ===== CANCEL =====
+async def cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("❌ Bekor qilindi.", reply_markup=menu_markup)
+    await update.message.reply_text("❌ Bekor qilindi", reply_markup=menu)
     return MENU
 
-# ========= ADMIN =========
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    u, a = stats()
-    await update.message.reply_text(f"👑 ADMIN\nUsers: {u}\nAds: {a}")
-
-# ========= BROADCAST =========
-async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    await update.message.reply_text("📢 Xabar yuboring:")
-    return BROADCAST
-
-async def broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    users = cursor.execute("SELECT id FROM users").fetchall()
-
-    sent = 0
-    for u in users:
-        try:
-            await context.bot.send_message(u[0], f"📢 ADMIN:\n{text}")
-            sent += 1
-        except:
-            pass
-
-    await update.message.reply_text(f"✅ Yuborildi: {sent}")
-    return ConversationHandler.END
-
-# ========= ERROR =========
-async def error_handler(update, context):
-    print("XATO:", context.error)
-
-# ========= MAIN =========
+# ===== MAIN =====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv = ConversationHandler(
+    user_conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu)],
-            SOTISH_NAME: [MessageHandler(filters.TEXT, sotish_name)],
-            SOTISH_PRICE: [MessageHandler(filters.TEXT, sotish_price)],
-            SOTISH_DESC: [MessageHandler(filters.TEXT, sotish_desc)],
-            SOTISH_PHOTO: [MessageHandler(filters.PHOTO, sotish_photo)],
-            OLISH: [MessageHandler(filters.TEXT, olish)],
+            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, user_menu)],
         },
-        fallbacks=[MessageHandler(filters.TEXT, cancel)],
+        fallbacks=[MessageHandler(filters.TEXT, cancel_flow)],
     )
 
-    broadcast_conv = ConversationHandler(
-        entry_points=[CommandHandler("broadcast", broadcast_cmd)],
-        states={BROADCAST: [MessageHandler(filters.TEXT, broadcast_send)]},
-        fallbacks=[],
+    add_conv = ConversationHandler(
+        entry_points=[CommandHandler("addmovie", add_movie)],
+        states={
+            ADD_CODE: [MessageHandler(filters.TEXT, add_code)],
+            ADD_TITLE: [MessageHandler(filters.TEXT, add_title)],
+            ADD_VIDEO: [MessageHandler(filters.VIDEO, add_video)],
+        },
+        fallbacks=[MessageHandler(filters.TEXT, cancel_flow)],
     )
 
-    app.add_handler(conv)
-    app.add_handler(broadcast_conv)
-    app.add_handler(CommandHandler("admin", admin))
-    app.add_error_handler(error_handler)
+    delete_conv = ConversationHandler(
+        entry_points=[CommandHandler("deletemovie", delete_movie)],
+        states={DELETE: [MessageHandler(filters.TEXT, delete_code)]},
+        fallbacks=[MessageHandler(filters.TEXT, cancel_flow)],
+    )
 
-    print("🚀 ULTRA PRO MARKET BOT ISHLAYAPTI...")
+    app.add_handler(user_conv)
+    app.add_handler(add_conv)
+    app.add_handler(delete_conv)
+    app.add_handler(CommandHandler("stats", stats))
+
+    print("🎬 PRO kino bot ishlayapti...")
     app.run_polling()
 
 if __name__ == "__main__":
