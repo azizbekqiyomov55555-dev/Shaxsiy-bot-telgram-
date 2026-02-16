@@ -8,8 +8,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+BOT_TOKEN = ("8356052924:AAG0auwyE4QSXLqI6adK8CUOfwzd7DWnihY")
+ADMIN_ID = ("8332077004", "0"))
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN topilmadi!")
