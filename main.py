@@ -17,7 +17,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 if __name__ == "__main__":
-    TOKEN = os.getenv("BOT_TOKEN")  # Railway environment variable
+    TOKEN = "8356052924:AAG0auwyE4QSXLqI6adK8CUOfwzd7DWnihY"
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
