@@ -14,19 +14,35 @@ dp = Dispatcher()
 # foydalanuvchi ovoz tanlovi
 user_voice = {}
 
-# ovoz variantlari
+# 12 ta ovoz
 voices = {
-    "🇺🇿 Erkak": "uz-UZ-SardorNeural",
-    "🇺🇿 Ayol": "uz-UZ-MadinaNeural",
+    "🇺🇿 Erkak 1": "uz-UZ-SardorNeural",
+    "🇺🇿 Ayol 1": "uz-UZ-MadinaNeural",
     "🇺🇸 Erkak": "en-US-GuyNeural",
     "🇺🇸 Ayol": "en-US-JennyNeural",
+    "🇬🇧 Erkak": "en-GB-RyanNeural",
+    "🇬🇧 Ayol": "en-GB-SoniaNeural",
+    "🇷🇺 Erkak": "ru-RU-DmitryNeural",
+    "🇷🇺 Ayol": "ru-RU-SvetlanaNeural",
+    "🇹🇷 Erkak": "tr-TR-AhmetNeural",
+    "🇹🇷 Ayol": "tr-TR-EmelNeural",
+    "🇩🇪 Erkak": "de-DE-ConradNeural",
+    "🇩🇪 Ayol": "de-DE-KatjaNeural",
 }
 
 def voice_keyboard():
-    buttons = [
-        [InlineKeyboardButton(text=name, callback_data=code)]
-        for name, code in voices.items()
-    ]
+    buttons = []
+    temp = []
+
+    for name, code in voices.items():
+        temp.append(InlineKeyboardButton(text=name, callback_data=code))
+        if len(temp) == 2:
+            buttons.append(temp)
+            temp = []
+
+    if temp:
+        buttons.append(temp)
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # start
@@ -41,6 +57,7 @@ async def start(message: Message):
 @dp.callback_query()
 async def choose_voice(callback: CallbackQuery):
     user_voice[callback.from_user.id] = callback.data
+
     await callback.message.edit_text(
         "✅ Ovoz tanlandi!\nEndi matn yuboring."
     )
@@ -49,28 +66,35 @@ async def choose_voice(callback: CallbackQuery):
 # matn → ovoz
 @dp.message(F.text)
 async def tts_handler(message: Message):
-    voice = user_voice.get(
-        message.from_user.id,
-        "uz-UZ-SardorNeural"
-    )
-
+    voice = user_voice.get(message.from_user.id, "uz-UZ-SardorNeural")
     filename = f"{message.from_user.id}.ogg"
 
     try:
-        communicate = edge_tts.Communicate(message.text, voice)
-        await communicate.save(filename)
+        success = False
+
+        for _ in range(3):  # retry
+            try:
+                communicate = edge_tts.Communicate(message.text, voice)
+                await communicate.save(filename)
+                success = True
+                break
+            except:
+                await asyncio.sleep(1)
+
+        if not success:
+            raise Exception("TTS server band")
 
         with open(filename, "rb") as audio:
             await message.answer_voice(audio)
 
     except Exception as e:
-        await message.answer(f"❌ Xatolik: {e}")
+        await message.answer("❌ Ovoz yaratib bo‘lmadi. Qayta urinib ko‘ring.")
 
     finally:
         if os.path.exists(filename):
             os.remove(filename)
 
-# run bot
+# run
 async def main():
     print("✅ Bot ishlayapti...")
     await dp.start_polling(bot)
