@@ -1,82 +1,71 @@
 import asyncio
 import os
+import edge_tts
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
-
-from gtts import gTTS
-from pydub import AudioSegment
 
 TOKEN = "8490993231:AAEXp9bVE4DaFe47aOT8hztSUgUutw8r5Nc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-user_style = {}
+user_voice = {}
 
-styles = {
-    "🎈 Multik": 1.3,
-    "🐿 Chipmunk": 1.6,
-    "🐢 Sekin": 0.8,
-    "🎤 Normal": 1.0,
-    "🤖 Robot": 0.6,
-    "⚡ Tez": 1.2,
+voices = {
+    "🎈 Multik qiz": "en-US-AnaNeural",
+    "🤖 Robot": "en-US-GuyNeural",
+    "👧 Anime": "ja-JP-NanamiNeural",
+    "🧒 Multik bola": "en-GB-RyanNeural",
+    "👩 Ayol": "ru-RU-SvetlanaNeural",
+    "👨 Erkak": "ru-RU-DmitryNeural",
+    "⚡ Tez": "en-US-JennyNeural",
+    "🐢 Sekin": "de-DE-KatjaNeural",
+    "🎤 Normal": "en-US-AriaNeural",
+    "🎭 Multik effekt": "ko-KR-SunHiNeural",
 }
 
 def keyboard():
-    buttons = []
+    rows = []
     row = []
-    for name, speed in styles.items():
-        row.append(InlineKeyboardButton(text=name, callback_data=str(speed)))
+    for name, voice in voices.items():
+        row.append(InlineKeyboardButton(text=name, callback_data=voice))
         if len(row) == 2:
-            buttons.append(row)
+            rows.append(row)
             row = []
     if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @dp.message(CommandStart())
 async def start(msg: Message):
-    await msg.answer("🎭 Ovoz uslubini tanlang:", reply_markup=keyboard())
+    await msg.answer("🎭 Ovoz tanlang:", reply_markup=keyboard())
 
 @dp.callback_query()
 async def choose(cb: CallbackQuery):
-    user_style[cb.from_user.id] = float(cb.data)
+    user_voice[cb.from_user.id] = cb.data
     await cb.message.edit_text("✅ Tanlandi! Endi matn yuboring.")
     await cb.answer()
 
-def change_speed(sound, speed):
-    altered = sound._spawn(sound.raw_data, overrides={
-        "frame_rate": int(sound.frame_rate * speed)
-    })
-    return altered.set_frame_rate(44100)
-
 @dp.message(F.text)
 async def tts(msg: Message):
-    speed = user_style.get(msg.from_user.id, 1.0)
+    voice = user_voice.get(msg.from_user.id, "en-US-AriaNeural")
+    file = f"{msg.from_user.id}.mp3"
 
     try:
-        mp3 = f"{msg.from_user.id}.mp3"
-        ogg = f"{msg.from_user.id}.ogg"
+        communicate = edge_tts.Communicate(msg.text, voice)
+        await communicate.save(file)
 
-        tts = gTTS(msg.text, lang="uz")
-        tts.save(mp3)
+        with open(file, "rb") as audio:
+            await msg.answer_voice(audio)
 
-        sound = AudioSegment.from_mp3(mp3)
-        sound = change_speed(sound, speed)
-        sound.export(ogg, format="ogg")
-
-        with open(ogg, "rb") as v:
-            await msg.answer_voice(v)
-
-    except Exception as e:
+    except:
         await msg.answer("❌ Ovoz yaratib bo‘lmadi.")
 
     finally:
-        for f in [mp3, ogg]:
-            if os.path.exists(f):
-                os.remove(f)
+        if os.path.exists(file):
+            os.remove(file)
 
 async def main():
     print("✅ Bot ishlayapti")
