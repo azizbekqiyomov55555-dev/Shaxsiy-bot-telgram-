@@ -1,51 +1,56 @@
 import asyncio
 import os
-import pyttsx3
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
+
+from gtts import gTTS
+from pydub import AudioSegment
 
 TOKEN = "8490993231:AAEXp9bVE4DaFe47aOT8hztSUgUutw8r5Nc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-engine = pyttsx3.init()
-
 
 @dp.message(CommandStart())
-async def start(msg: Message):
-    await msg.answer("Matn yuboring — ovozga aylantiraman 🎤")
-
-
-def make_voice(text, filename):
-    engine.save_to_file(text, filename)
-    engine.runAndWait()
+async def start_handler(message: Message):
+    await message.answer("✅ Matn yuboring — ovozga aylantiraman 🎤")
 
 
 @dp.message(F.text)
-async def tts(msg: Message):
-    uid = msg.from_user.id
-    wav = f"{uid}.wav"
+async def tts_handler(message: Message):
+    user_id = message.from_user.id
+    mp3_file = f"{user_id}.mp3"
+    ogg_file = f"{user_id}.ogg"
 
     try:
-        make_voice(msg.text, wav)
+        # Matn → mp3
+        tts = gTTS(text=message.text, lang="uz")
+        tts.save(mp3_file)
 
-        with open(wav, "rb") as audio:
-            await msg.answer_voice(audio)
+        # mp3 → ogg (telegram voice format)
+        audio = AudioSegment.from_mp3(mp3_file)
+        audio.export(ogg_file, format="ogg")
+
+        # Ovoz yuborish
+        with open(ogg_file, "rb") as voice:
+            await message.answer_voice(voice)
 
     except Exception as e:
-        print(e)
-        await msg.answer("❌ Ovoz yaratib bo‘lmadi")
+        print("XATO:", e)
+        await message.answer("❌ Ovoz yaratib bo‘lmadi. Qayta urinib ko‘ring.")
 
     finally:
-        if os.path.exists(wav):
-            os.remove(wav)
+        # Fayllarni o‘chirish
+        for f in [mp3_file, ogg_file]:
+            if os.path.exists(f):
+                os.remove(f)
 
 
 async def main():
-    print("✅ Bot ishlayapti")
+    print("✅ Bot ishga tushdi")
     await dp.start_polling(bot)
 
 
