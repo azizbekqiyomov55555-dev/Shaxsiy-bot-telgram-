@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 
-TOKEN = "BOT_TOKENNI_BU_YERGA"
+TOKEN = "8545993575:AAFFvnH6u_D0Wo7enHA6BpmeT7IC4OrpvS0"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
