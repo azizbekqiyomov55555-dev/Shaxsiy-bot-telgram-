@@ -1,2 +1,2 @@
-aiogram
-edge-tts
+aiogram==3.4.1
+edge-tts==6.1.9
