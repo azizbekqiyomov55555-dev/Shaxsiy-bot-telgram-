@@ -12,51 +12,46 @@ TOKEN = "8490993231:AAEXp9bVE4DaFe47aOT8hztSUgUutw8r5Nc"
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
-# ====== KO‘P OVOZLAR ======
 VOICES = [
     "ja-JP-NanamiNeural",
-    "ja-JP-KeitaNeural",
     "en-US-JennyNeural",
-    "en-US-GuyNeural",
     "ru-RU-DmitryNeural",
-    "ru-RU-SvetlanaNeural",
-    "en-GB-SoniaNeural",
     "ko-KR-SunHiNeural",
     "fr-FR-DeniseNeural",
     "de-DE-KatjaNeural",
-    "zh-CN-XiaoxiaoNeural",
-    "it-IT-ElsaNeural",
 ]
 
-# ====== START ======
+# ===== start =====
 @dp.message(CommandStart())
 async def start(msg: types.Message):
-    await msg.answer("✅ Matn yubor — har xil ovozda o‘qib beraman")
+    await msg.answer("✅ Matn yubor")
 
-# ====== MATN → OVOZ ======
+# ===== TTS =====
 @dp.message()
 async def tts(msg: types.Message):
-    text = msg.text
 
-    if not text:
+    if not msg.text:
         return
 
     voice = random.choice(VOICES)
+    filename = f"voice_{msg.from_user.id}.mp3"
 
-    try:
-        filename = f"voice_{msg.from_user.id}.mp3"
+    for attempt in range(3):  # retry
+        try:
+            communicate = edge_tts.Communicate(msg.text, voice)
+            await communicate.save(filename)
 
-        communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(filename)
+            await msg.answer_voice(FSInputFile(filename))
+            os.remove(filename)
+            return
 
-        await msg.answer_voice(FSInputFile(filename))
-        os.remove(filename)
+        except Exception as e:
+            print("Retry:", attempt, e)
+            await asyncio.sleep(1)
 
-    except Exception as e:
-        print("XATO:", e)
-        await msg.answer("❌ Ovoz yaratishda xato")
+    await msg.answer("❌ Ovoz yaratib bo‘lmadi")
 
-# ====== RUN ======
+# ===== run =====
 async def main():
     print("✅ Bot ishga tushdi")
     await dp.start_polling(bot)
