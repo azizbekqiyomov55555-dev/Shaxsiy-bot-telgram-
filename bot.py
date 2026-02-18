@@ -1,70 +1,47 @@
 import asyncio
 import os
+import random
 import edge_tts
 
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import FSInputFile
 
 TOKEN = "8490993231:AAEXp9bVE4DaFe47aOT8hztSUgUutw8r5Nc"
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
-# ====== OVOZLAR ======
-VOICES = {
-    "Anime qiz 🇯🇵": "ja-JP-NanamiNeural",
-    "Anime yigit 🇯🇵": "ja-JP-KeitaNeural",
-    "Multik qiz 🇺🇸": "en-US-JennyNeural",
-    "Multik yigit 🇺🇸": "en-US-GuyNeural",
-    "Robot 🤖": "en-US-AriaNeural",
-    "Rus erkak 🇷🇺": "ru-RU-DmitryNeural",
-    "Rus ayol 🇷🇺": "ru-RU-SvetlanaNeural",
-    "Britan qiz 🇬🇧": "en-GB-SoniaNeural",
-    "Koreys 🇰🇷": "ko-KR-SunHiNeural",
-    "Xitoy 🇨🇳": "zh-CN-XiaoxiaoNeural",
-    "Fransuz 🇫🇷": "fr-FR-DeniseNeural",
-    "Nemis 🇩🇪": "de-DE-KatjaNeural",
-}
-
-user_voice = {}
-
-# ====== TUGMALAR ======
-def voice_menu():
-    buttons = [
-        [InlineKeyboardButton(text=name, callback_data=name)]
-        for name in VOICES
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+# ====== KO‘P OVOZLAR ======
+VOICES = [
+    "ja-JP-NanamiNeural",
+    "ja-JP-KeitaNeural",
+    "en-US-JennyNeural",
+    "en-US-GuyNeural",
+    "ru-RU-DmitryNeural",
+    "ru-RU-SvetlanaNeural",
+    "en-GB-SoniaNeural",
+    "ko-KR-SunHiNeural",
+    "fr-FR-DeniseNeural",
+    "de-DE-KatjaNeural",
+    "zh-CN-XiaoxiaoNeural",
+    "it-IT-ElsaNeural",
+]
 
 # ====== START ======
 @dp.message(CommandStart())
 async def start(msg: types.Message):
-    await msg.answer(
-        "🎤 Ovoz tanlang:",
-        reply_markup=voice_menu()
-    )
-
-# ====== OVOZ TANLASH ======
-@dp.callback_query(F.data.in_(VOICES.keys()))
-async def choose_voice(call: types.CallbackQuery):
-    user_voice[call.from_user.id] = VOICES[call.data]
-
-    await call.message.answer(
-        f"✅ Tanlandi: {call.data}\nEndi matn yubor!"
-    )
-    await call.answer()
+    await msg.answer("✅ Matn yubor — har xil ovozda o‘qib beraman")
 
 # ====== MATN → OVOZ ======
 @dp.message()
 async def tts(msg: types.Message):
-    voice = user_voice.get(msg.from_user.id)
+    text = msg.text
 
-    if not voice:
-        await msg.answer("⚠️ Avval ovoz tanlang /start")
+    if not text:
         return
 
-    text = msg.text
+    voice = random.choice(VOICES)
 
     try:
         filename = f"voice_{msg.from_user.id}.mp3"
