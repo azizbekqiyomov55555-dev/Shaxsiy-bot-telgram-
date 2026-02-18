@@ -3,10 +3,10 @@ import os
 import edge_tts
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
 
-TOKEN = "8545993575:AAFFvnH6u_D0Wo7enHA6BpmeT7IC4OrpvS0"
+TOKEN = "8312975127:AAFIXWrANgTpX_9ldK16OP97Tky3iRJqzL4"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -16,10 +16,10 @@ user_voice = {}
 
 # ovoz variantlari
 voices = {
-    "Erkak 🇺🇿": "uz-UZ-SardorNeural",
-    "Ayol 🇺🇿": "uz-UZ-MadinaNeural",
-    "Erkak 🇺🇸": "en-US-GuyNeural",
-    "Ayol 🇺🇸": "en-US-JennyNeural",
+    "🇺🇿 Erkak": "uz-UZ-SardorNeural",
+    "🇺🇿 Ayol": "uz-UZ-MadinaNeural",
+    "🇺🇸 Erkak": "en-US-GuyNeural",
+    "🇺🇸 Ayol": "en-US-JennyNeural",
 }
 
 def voice_keyboard():
@@ -29,6 +29,7 @@ def voice_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+# start
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
@@ -36,24 +37,40 @@ async def start(message: Message):
         reply_markup=voice_keyboard()
     )
 
+# ovoz tanlash
 @dp.callback_query()
-async def choose_voice(callback):
+async def choose_voice(callback: CallbackQuery):
     user_voice[callback.from_user.id] = callback.data
-    await callback.message.edit_text("✅ Ovoz tanlandi!\nEndi matn yuboring.")
+    await callback.message.edit_text(
+        "✅ Ovoz tanlandi!\nEndi matn yuboring."
+    )
+    await callback.answer()
 
+# matn → ovoz
 @dp.message(F.text)
 async def tts_handler(message: Message):
-    voice = user_voice.get(message.from_user.id, "uz-UZ-SardorNeural")
+    voice = user_voice.get(
+        message.from_user.id,
+        "uz-UZ-SardorNeural"
+    )
 
-    filename = f"{message.from_user.id}.mp3"
+    filename = f"{message.from_user.id}.ogg"
 
-    communicate = edge_tts.Communicate(message.text, voice)
-    await communicate.save(filename)
+    try:
+        communicate = edge_tts.Communicate(message.text, voice)
+        await communicate.save(filename)
 
-    await message.answer_voice(open(filename, "rb"))
+        with open(filename, "rb") as audio:
+            await message.answer_voice(audio)
 
-    os.remove(filename)
+    except Exception as e:
+        await message.answer(f"❌ Xatolik: {e}")
 
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)
+
+# run bot
 async def main():
     print("✅ Bot ishlayapti...")
     await dp.start_polling(bot)
