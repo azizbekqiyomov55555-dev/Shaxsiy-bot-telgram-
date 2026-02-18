@@ -5,3 +5,6 @@ aiogram==3.4.1
 gTTS==2.5.1
 pydub==0.25.1
 pydantic==2.5.3
+aiogram==3.4.1
+pyttsx3
+pydub
