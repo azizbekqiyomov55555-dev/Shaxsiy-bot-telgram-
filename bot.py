@@ -1,102 +1,85 @@
 import asyncio
 import os
-import edge_tts
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
+
+from gtts import gTTS
+from pydub import AudioSegment
 
 TOKEN = "8490993231:AAEXp9bVE4DaFe47aOT8hztSUgUutw8r5Nc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# foydalanuvchi ovoz tanlovi
-user_voice = {}
+user_style = {}
 
-# 12 ta ovoz
-voices = {
-    "🇺🇿 Erkak 1": "uz-UZ-SardorNeural",
-    "🇺🇿 Ayol 1": "uz-UZ-MadinaNeural",
-    "🇺🇸 Erkak": "en-US-GuyNeural",
-    "🇺🇸 Ayol": "en-US-JennyNeural",
-    "🇬🇧 Erkak": "en-GB-RyanNeural",
-    "🇬🇧 Ayol": "en-GB-SoniaNeural",
-    "🇷🇺 Erkak": "ru-RU-DmitryNeural",
-    "🇷🇺 Ayol": "ru-RU-SvetlanaNeural",
-    "🇹🇷 Erkak": "tr-TR-AhmetNeural",
-    "🇹🇷 Ayol": "tr-TR-EmelNeural",
-    "🇩🇪 Erkak": "de-DE-ConradNeural",
-    "🇩🇪 Ayol": "de-DE-KatjaNeural",
+styles = {
+    "🎈 Multik": 1.3,
+    "🐿 Chipmunk": 1.6,
+    "🐢 Sekin": 0.8,
+    "🎤 Normal": 1.0,
+    "🤖 Robot": 0.6,
+    "⚡ Tez": 1.2,
 }
 
-def voice_keyboard():
+def keyboard():
     buttons = []
-    temp = []
-
-    for name, code in voices.items():
-        temp.append(InlineKeyboardButton(text=name, callback_data=code))
-        if len(temp) == 2:
-            buttons.append(temp)
-            temp = []
-
-    if temp:
-        buttons.append(temp)
-
+    row = []
+    for name, speed in styles.items():
+        row.append(InlineKeyboardButton(text=name, callback_data=str(speed)))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# start
 @dp.message(CommandStart())
-async def start(message: Message):
-    await message.answer(
-        "🎤 Ovoz tanlang:",
-        reply_markup=voice_keyboard()
-    )
+async def start(msg: Message):
+    await msg.answer("🎭 Ovoz uslubini tanlang:", reply_markup=keyboard())
 
-# ovoz tanlash
 @dp.callback_query()
-async def choose_voice(callback: CallbackQuery):
-    user_voice[callback.from_user.id] = callback.data
+async def choose(cb: CallbackQuery):
+    user_style[cb.from_user.id] = float(cb.data)
+    await cb.message.edit_text("✅ Tanlandi! Endi matn yuboring.")
+    await cb.answer()
 
-    await callback.message.edit_text(
-        "✅ Ovoz tanlandi!\nEndi matn yuboring."
-    )
-    await callback.answer()
+def change_speed(sound, speed):
+    altered = sound._spawn(sound.raw_data, overrides={
+        "frame_rate": int(sound.frame_rate * speed)
+    })
+    return altered.set_frame_rate(44100)
 
-# matn → ovoz
 @dp.message(F.text)
-async def tts_handler(message: Message):
-    voice = user_voice.get(message.from_user.id, "uz-UZ-SardorNeural")
-    filename = f"{message.from_user.id}.ogg"
+async def tts(msg: Message):
+    speed = user_style.get(msg.from_user.id, 1.0)
 
     try:
-        success = False
+        mp3 = f"{msg.from_user.id}.mp3"
+        ogg = f"{msg.from_user.id}.ogg"
 
-        for _ in range(3):  # retry
-            try:
-                communicate = edge_tts.Communicate(message.text, voice)
-                await communicate.save(filename)
-                success = True
-                break
-            except:
-                await asyncio.sleep(1)
+        tts = gTTS(msg.text, lang="uz")
+        tts.save(mp3)
 
-        if not success:
-            raise Exception("TTS server band")
+        sound = AudioSegment.from_mp3(mp3)
+        sound = change_speed(sound, speed)
+        sound.export(ogg, format="ogg")
 
-        with open(filename, "rb") as audio:
-            await message.answer_voice(audio)
+        with open(ogg, "rb") as v:
+            await msg.answer_voice(v)
 
     except Exception as e:
-        await message.answer("❌ Ovoz yaratib bo‘lmadi. Qayta urinib ko‘ring.")
+        await msg.answer("❌ Ovoz yaratib bo‘lmadi.")
 
     finally:
-        if os.path.exists(filename):
-            os.remove(filename)
+        for f in [mp3, ogg]:
+            if os.path.exists(f):
+                os.remove(f)
 
-# run
 async def main():
-    print("✅ Bot ishlayapti...")
+    print("✅ Bot ishlayapti")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
